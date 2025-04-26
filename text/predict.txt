@@ -1,0 +1,12 @@
+准确率 Accuracy:0.9656
+
+分类报告:
+              precision    recall  f1-score   support
+
+          消极       1.00      0.89      0.94      2000
+          中性       0.95      0.98      0.96     10000
+          积极       0.97      0.97      0.97     10000
+
+    accuracy                           0.97     22000
+   macro avg       0.97      0.95      0.96     22000
+weighted avg       0.97      0.97      0.97     22000
