@@ -13,11 +13,18 @@ class TextCNN(nn.Module):
             nn.Conv1d(cfg.embedding_dim, cfg.num_filters, kernel_size=k)
             for k in cfg.filter_sizes
         ])
+        # 自注意力
+        self.self_attention = nn.MultiheadAttention(
+            embed_dim=cfg.num_filters*len(cfg.filter_sizes),
+            num_heads=4
+            )
         # dropout防止过拟合
         self.dropout = nn.Dropout(cfg.dropout)
         # 全连接层
-        self.fc = nn.Linear(cfg.num_filters * len(cfg.filter_sizes), cfg.num_classes)
-
+        self.fc = nn.Linear(
+            cfg.num_filters * len(cfg.filter_sizes),
+            cfg.num_classes
+            )
     def forward(self, x):
         # 词id转换为稠密向量 匹配卷积输入格式
         x = self.embedding(x).transpose(1, 2)
@@ -27,4 +34,8 @@ class TextCNN(nn.Module):
         x = torch.cat(x, dim=1)
         # dropout
         x = self.dropout(x)
+        x = x.unsqueeze(0)
+        x,_ = self.self_attention(x, x, x)
+        x = x.squeeze(0)
+        
         return self.fc(x)
