@@ -75,9 +75,9 @@ class KeywordExtractor:
                 continue
             
             end_pos = start_pos + len(word)
-            # 获取前后各10个字符作为上下文
-            context_start = max(0, start_pos - 10)
-            context_end = min(len(text), end_pos + 10)
+            # 获取前后各5个字符作为上下文
+            context_start = max(0, start_pos - 5)
+            context_end = min(len(text), end_pos + 5)
             context = text[context_start:context_end]
             keywords_with_context.append(f"{word}[{context}]")
         

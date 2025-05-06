@@ -9,8 +9,7 @@ from datetime import datetime
 from transformers import AutoTokenizer
 import time
 from tqdm import tqdm
-import torch.nn.functional as F
-import numpy as np
+from keyword_extractor import KeywordExtractor
 
 # 设置模型路径和模型加载
 model_path = os.path.join(cfg.model_save, 'best_model/')
@@ -26,6 +25,7 @@ model.eval()
 
 # 读取验证集数据
 tokenizer = AutoTokenizer.from_pretrained(model_path)
+keyword_extractor = KeywordExtractor(tokenizer, model) 
 dataloader, _, val_data = get_dataloader(
     cfg.val_path, 
     tokenizer, 
@@ -40,65 +40,30 @@ all_texts = []
 time_val = []
 top_tokens_batch = []
 
-def get_keywords(input_ids, attention_mask, tokenizer, top_k=3):
-    """获取影响预测的关键词"""
-    with torch.no_grad():
-        outputs = model.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            output_attentions=True
-        )
-    
-    # 获取最后一层的平均注意力权重
-    attentions = outputs.attentions[-1]  # (batch_size, num_heads, seq_len, seq_len)
-    avg_attentions = attentions.mean(dim=1)  # 平均所有注意力头 (batch_size, seq_len, seq_len)
-    
-    # 获取CLS标记对其他标记的注意力权重
-    cls_attention = avg_attentions[:, 0, :]  # (batch_size, seq_len)
-    
-    keywords_list = []
-    for i in range(len(input_ids)):
-        # 获取非填充部分的token和注意力权重
-        non_padding = attention_mask[i].nonzero().squeeze()
-        tokens = input_ids[i][non_padding]
-        weights = cls_attention[i][non_padding]
-        
-        # 排除特殊token
-        special_tokens = [tokenizer.cls_token_id, tokenizer.sep_token_id, tokenizer.pad_token_id]
-        valid_indices = [idx for idx, token in enumerate(tokens) if token not in special_tokens]
-        
-        if len(valid_indices) == 0:
-            keywords_list.append([])
-            continue
-            
-        tokens = tokens[valid_indices]
-        weights = weights[valid_indices]
-        
-        # 获取权重最高的top_k个token
-        top_indices = weights.topk(min(top_k, len(weights))).indices
-        top_tokens = [tokenizer.decode([token]) for token in tokens[top_indices]]
-        keywords_list.append(", ".join(top_tokens))
-    
-    return keywords_list
-
 with torch.no_grad():
     loop = tqdm(dataloader, desc="evaluating", leave=True)
     for i, batch in enumerate(loop):
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
         labels = batch['labels'].to(device)
+        texts = [val_data.texts[i * cfg.batch_size + j] for j in range(len(input_ids))]
 
         start_time = time.time()
-        loss, logits = model(
+        
+        outputs = model.bert(
             input_ids=input_ids, 
             attention_mask=attention_mask,
-            labels=labels
+            output_attentions=True
         )
-        
+        logits = model.classifier(model.dropout(outputs.last_hidden_state[:, 0]))
         preds = torch.argmax(logits, dim=1)
         
-        keywords = get_keywords(input_ids, attention_mask, tokenizer)
-        top_tokens_batch.extend(keywords)
+        batch_keywords = keyword_extractor.extract_from_batch(
+            texts=texts,
+            input_ids=input_ids,
+            attention_masks=attention_mask
+        )
+        top_tokens_batch.extend(batch_keywords)
 
         end_time = time.time()            
         all_preds.extend(preds.cpu().numpy())
