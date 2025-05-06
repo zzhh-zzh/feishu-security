@@ -1,53 +1,69 @@
-import torch
+from data_loader import get_dataloader
 import torch.nn as nn
-from sklearn.metrics import f1_score
+import torch
 from config import cfg
+from model import RobertaClassifier
 import os
+from tqdm import tqdm
+from torch.optim import AdamW
 
-class Trainer:
-    def __init__(self, model, train_loader, val_loader):
-        """
-        模型送入GPU，adam优化器进行参数更新
-        """
-        self.model = model.to(cfg.device)
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
+# 运行c/g
+device = cfg.device
 
-    def train_one_epoch(self):
-        self.model.train()
-        total_loss = 0
-        for inputs, labels in self.train_loader:
-            inputs, labels = inputs.to(cfg.device), labels.to(cfg.device)
-            self.optimizer.zero_grad()
-            outputs = self.model(inputs)
-            loss = self.criterion(outputs, labels)
-            loss.backward()
-            self.optimizer.step()
-            total_loss += loss.item()
-        return total_loss / len(self.train_loader)
+# 数据集
+dataloader, tokenizer, _ = get_dataloader(
+    cfg.train_path, 
+    batch_size=cfg.batch_size,
+    max_length=cfg.max_length,
+    shuffle=True)
 
-    def evaluate(self):
-        self.model.eval()
-        preds, trues = [], []
-        with torch.no_grad():
-            for inputs, labels in self.val_loader:
-                inputs = inputs.to(cfg.device)
-                outputs = self.model(inputs)
-                pred = torch.argmax(outputs, dim=1).cpu().tolist()
-                preds.extend(pred)
-                trues.extend(labels.tolist())
-        return f1_score(trues, preds, average='macro')
+# 模型
+model_name = cfg.pretrained_name
+model = RobertaClassifier(
+    model_name=cfg.pretrained_name,
+    num_classes=cfg.num_labels,
+    dropout=cfg.dropout
+)
+model.to(device)
 
-    def run(self):
-        best_f1 = 0
-        os.makedirs(cfg.model_save_path, exist_ok=True)
-        for epoch in range(cfg.num_epochs):
-            train_loss = self.train_one_epoch()
-            val_f1 = self.evaluate()
-            print(f"Epoch {epoch+1} | Loss: {train_loss:.4f} | Val F1: {val_f1:.4f}")
-            if val_f1 > best_f1:
-                best_f1 = val_f1
-                torch.save(self.model.state_dict(), os.path.join(cfg.model_save_path, 'best_model.pth'))
-        print(f"Training Complete. Best F1: {best_f1:.4f}")
+# 优化器
+optimizer = AdamW(
+    model.parameters(), 
+    lr=cfg.learning_rate,
+    weight_decay= cfg.weight_decay
+    )
+
+epochs = cfg.epochs
+save_dir = cfg.model_save
+
+model.train()
+for epoch in range(0,epochs):
+    print(f'\n--第{epoch+1}轮训练---')
+    loop = tqdm(dataloader, desc=f'Epoch{epoch+1}/{epochs}')
+    
+    for batch in loop:
+        batch = {key:val.to(device) for key,val in batch.items()}
+        
+        input_ids = batch['input_ids'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
+        labels = batch['labels'].to(device)
+        
+        loss, logits = model(
+            input_ids = input_ids,
+            attention_mask = attention_mask,
+            labels = labels
+        )
+    
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+         
+        loop.set_postfix(loss=loss.item())
+    
+        
+    epoch_save_path = os.path.join(save_dir,f'epoch{epoch+1}')
+    os.makedirs(epoch_save_path, exist_ok=True)
+    torch.save(model.state_dict(), epoch_save_path +"/model_state_dict.pth")
+    tokenizer.save_pretrained(epoch_save_path)
+    print(f"第{epoch+1}轮训练完成，模型已保存至 {epoch_save_path}")
+        
