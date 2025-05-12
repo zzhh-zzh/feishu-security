@@ -11,21 +11,22 @@ class RobertaClassifier(nn.Module):
         
     def forward(self, input_ids, attention_mask, labels=None):
         outputs = self.bert(
-            input_ids = input_ids,
-            attention_mask = attention_mask,
-            output_attentions = True
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_attentions=True
         )
-        
+
         cls_output = outputs.last_hidden_state[:, 0, :]
         cls_output = self.dropout(cls_output)
         logits = self.classifier(cls_output)
-        
+
         loss = None
         if labels is not None:
             loss_fn = nn.CrossEntropyLoss()
             loss = loss_fn(logits.view(-1, self.num_classes), labels.view(-1))
-            return {
-        'logits': logits,
-        'loss': loss,
-        'attentions': outputs.attentions  # 返回注意力权重
-    }
+
+        return {
+            'logits': logits,
+            'loss': loss,
+            'attentions': outputs.attentions  # 确保返回注意力
+        }

@@ -19,7 +19,8 @@ model = RobertaClassifier(
     dropout=cfg.dropout
 )
 model.load_state_dict(torch.load(os.path.join(model_path, 'model_state_dict.pth')))
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+# device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cuda"
 model.to(device)
 model.eval()
 
@@ -46,6 +47,7 @@ with torch.no_grad():
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
         labels = batch['labels'].to(device)
+        offset_mapping = batch['offset_mapping']  # 新增
         texts = [val_data.texts[i * cfg.batch_size + j] for j in range(len(input_ids))]
 
         start_time = time.time()
@@ -61,7 +63,9 @@ with torch.no_grad():
         batch_keywords = keyword_extractor.extract_from_batch(
             texts=texts,
             input_ids=input_ids,
-            attention_masks=attention_mask
+            attention_masks=attention_mask,
+            offset_mappings=offset_mapping,
+            top_k=3
         )
         top_tokens_batch.extend(batch_keywords)
 

@@ -57,8 +57,8 @@ def generate_gradcam(model, images, target_class):
     return cam
 
 def eval():
-    # device = 'cpu'
-    device = 'cuda'
+    device = 'cpu'
+    # device = 'cuda'
     # 加载模型
     model = build_model()
     model.load_state_dict(torch.load(cfg.model_save_path))
@@ -89,8 +89,6 @@ def eval():
         all_preds.extend(preds.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
         
-
-        
         # 错误样本分析
         incorrect_indices = (preds != labels).nonzero(as_tuple = False).squeeze(0)
         
@@ -110,38 +108,46 @@ def eval():
             label = labels[idx].item()
             pred = preds[idx].item()
             
+            # 生成Grad-CAM
             cam = generate_gradcam(model, img, target_class=pred)
             cam = cam.detach().cpu().numpy()
+
+            # 原始图像处理（保持原始色彩）
+            img_np = img.squeeze(0).permute(1, 2, 0).cpu().numpy()
+            img_np = (img_np - img_np.min()) / (img_np.max() - img_np.min())  # 归一化到[0,1]
+            
+            # 调整CAM热图
+            cam = cv2.resize(cam, (img_np.shape[1], img_np.shape[0]))
             cam = np.uint8(255 * cam)
-            cam = cv2.resize(cam, (images.shape[3], images.shape[2]))  # Resize to match original image size
-            cam = cv2.applyColorMap(cam, cv2.COLORMAP_JET)  # Now shape: (H, W, 3)
+            heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+            heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)  # 转换为RGB
 
-            # 原始图像处理
-            img_np = img.squeeze(0).detach().cpu().numpy().transpose(1, 2, 0)  # (H, W, C)
-            img_np = np.uint8(255 * img_np)  # 如果是 [0,1] 范围的图像
-            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)  # OpenCV uses BGR
+            # 创建透明叠加层
+            alpha = 0.5  # 透明度调节
+            overlay = img_np.copy()
+            heatmap_normalized = heatmap.astype(np.float32) / 255
 
-            # 保证两者尺寸完全一致
-            if cam.shape != img_np.shape:
-                cam = cv2.resize(cam, (img_np.shape[1], img_np.shape[0]))
+            # 更柔和的叠加方式
+            overlay = (1 - alpha) * overlay + alpha * heatmap_normalized
+            overlay = np.clip(overlay, 0, 1)  # 确保值在[0,1]范围内
 
-            # 叠加
-            overlay = cv2.addWeighted(cam, 0.8, img_np, 0.2, 0)
-            overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)  # 再转回 RGB 供 matplotlib 显示
-
-            # 显示图像
+            # 可视化
             plt.figure(figsize=(10, 10))
+
+            # 原始图像（保持真实色彩）
             plt.subplot(1, 2, 1)
-            plt.imshow(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB))  # 再转为 RGB 显示
-            plt.title(f"True: {label}, Pred: {pred}")
+            plt.imshow(img_np)
+            plt.title(f"Original\nTrue: {label}, Pred: {pred}")
+
+            # 叠加图像
             plt.subplot(1, 2, 2)
             plt.imshow(overlay)
             plt.title("Grad-CAM")
+
             plt.tight_layout()
-            plt.savefig(f"cv/cam/gradcam_output_{batch_start+idx}_{cfg.id2label[label]}_{cfg.id2label[pred]}.png") 
+            save_path = f"cv/cam/gradcam_output_{batch_start+idx}_{cfg.id2label[label]}_{cfg.id2label[pred]}.png"
+            plt.savefig(save_path, bbox_inches='tight')
             plt.close()
-            # 防止重复覆盖
-            # plt.show()
             
         end_time = time.time()
         ave_time = end_time - st_time

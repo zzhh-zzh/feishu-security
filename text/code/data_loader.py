@@ -25,20 +25,23 @@ class TextDataset(Dataset):
     def __getitem__(self, idx):
         text = self.texts[idx]
         label = self.labels[idx]
-        
+
         encoding = self.tokenizer(
             text,
-            padding = 'max_length',
-            truncation = True,
-            max_length = self.max_length,
-            return_tensors = 'pt'
+            padding='max_length',
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors='pt',
+            return_offsets_mapping=True  # 新增offset mapping
         )
-        
+
         return {
             'input_ids': encoding['input_ids'].squeeze(0),
             'attention_mask': encoding['attention_mask'].squeeze(0),
-            'labels':torch.tensor(label, dtype=torch.long)
+            'offset_mapping': encoding['offset_mapping'].squeeze(0),  # 新增
+            'labels': torch.tensor(label, dtype=torch.long)
         }
+
         
 
 def get_dataloader(
