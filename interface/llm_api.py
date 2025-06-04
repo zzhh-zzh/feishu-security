@@ -5,7 +5,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="https://ark.cn-beijing.volces.com/api/v3",
-    api_key="6e9cdd8a-eb42-471f-a49c-9e53100a018e"
+    api_key="**"
 )
 
 def analyze_animal(image_url):
